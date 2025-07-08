@@ -878,6 +878,7 @@ dependencies = [
  "esp-hal",
  "esp-println",
  "heapless",
+ "nb 1.1.0",
  "ssd1306",
 ]
 
