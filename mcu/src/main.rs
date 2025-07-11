@@ -18,7 +18,7 @@ use esp_hal::{
     gpio::{Level, Output, OutputConfig},
     i2c::{self, master::I2c},
     main,
-    peripherals::{GPIO17, GPIO18, GPIO21, I2C0},
+    peripherals::{GPIO10, GPIO17, GPIO18, GPIO21, GPIO3, I2C0},
     time::Rate,
     twai::{
         self,
@@ -62,19 +62,17 @@ fn _main() -> Result<!> {
     let mut str: String<100> = heapless::String::new();
 
     let mut display = init_display(
-        peripherals.GPIO21,
         peripherals.I2C0,
-        peripherals.GPIO17,
-        peripherals.GPIO18,
-        &delay,
+        peripherals.GPIO10,
+        peripherals.GPIO3,
     )?;
 
-    let twai_rx_pin = peripherals.GPIO47;
-    let twai_tx_pin = peripherals.GPIO48;
+    let twai_rx_pin = peripherals.GPIO0;
+    let twai_tx_pin = peripherals.GPIO1;
 
     const TWAI_BAUDRATE: twai::BaudRate = BaudRate::B500K;
 
-    let mut twai_config = twai::TwaiConfiguration::new(
+    let twai_config = twai::TwaiConfiguration::new(
         peripherals.TWAI0,
         twai_rx_pin,
         twai_tx_pin,
@@ -82,10 +80,10 @@ fn _main() -> Result<!> {
         TwaiMode::Normal,
     );
 
-    // todo: test what happens if no filter is set - are all frames received or none?
-    twai_config.set_filter(
-        const { SingleStandardFilter::new(b"xxxxxxxxxxx", b"x", [b"xxxxxxxx", b"xxxxxxxx"]) },
-    );
+    // When not setting a filter, all frames will be received.
+    // twai_config.set_filter(
+    //     const { SingleStandardFilter::new(b"xxxxxxxxxxx", b"x", [b"xxxxxxxx", b"xxxxxxxx"]) },
+    // );
 
     let mut twai = twai_config.start();
 
@@ -121,12 +119,14 @@ fn _main() -> Result<!> {
                     if last_percentage != h2_percentage {
                         last_percentage = h2_percentage;
 
+                        // Write to display
                         str.clear();
-                        write!(&mut str, "H2: {:.4}%", h2_percentage)?;
+                        write!(&mut str, "H2: {:.2}%", h2_percentage)?;
                         set_status(&mut display, &str)?;
-
-                        esp_println::println!("H2: {:.4}%", h2_percentage);
                     }
+
+                    // write to usb serial port
+                    esp_println::println!("H2: {:.2}%", h2_percentage);
                 }
             }
             Err(::nb::Error::WouldBlock) => {}
@@ -138,34 +138,16 @@ fn _main() -> Result<!> {
 }
 
 fn init_display(
-    rst: GPIO21<'static>,
     i2c: I2C0<'static>,
-    sda: GPIO17<'static>,
-    scl: GPIO18<'static>,
-    delay: &Delay,
+    sda: GPIO10<'static>,
+    scl: GPIO3<'static>,
 ) -> Result<MyDisplay> {
-    esp_println::dbg!("About to initialize the Heltec SSD1306 I2C LED driver");
 
     let i2c_config = i2c::master::Config::default().with_frequency(Rate::from_khz(400));
 
     let i2c = I2c::new(i2c, i2c_config)?.with_scl(scl).with_sda(sda);
 
     let di = ssd1306::I2CDisplayInterface::new(i2c);
-
-    let mut reset = Output::new(rst, Level::High, OutputConfig::default());
-
-    // high for 1 ms
-    delay.delay_millis(1 as u32);
-
-    reset.set_low();
-    delay.delay_millis(10 as u32);
-
-    reset.set_high();
-
-    // Note:
-    //   PinDriver of IDF had a Drop implementation that resets the pin, which would turn off the display
-    //   This seems to no longer be neccessary when using esp-hal.
-    // mem::forget(reset);
 
     let mut display: ssd1306::Ssd1306<
         ssd1306::prelude::I2CInterface<I2c<'_, esp_hal::Blocking>>,
